@@ -1,1 +1,8 @@
-streamlit yfinance PyPortfolioOpt plotly pandas numpy matplotlib scipy
+streamlit
+yfinance
+PyPortfolioOpt
+plotly
+pandas
+numpy
+matplotlib
+scipy
