@@ -33,9 +33,18 @@ submit_btn = st.sidebar.button("Otimizar Portfólio")
 
 # --- Funções Auxiliares ---
 def get_data(tickers, start):
-    """Baixa dados ajustados do Yahoo Finance"""
-    data = yf.download(tickers, start=start)['Adj Close']
-    return data
+    """
+    Baixa dados do Yahoo Finance.
+    Usa auto_adjust=True para já receber os preços ajustados (dividendos/splits).
+    """
+    data = yf.download(tickers, start=start, auto_adjust=True)
+    
+    # Tratamento para garantir que pegamos apenas os preços de fechamento
+    if 'Close' in data.columns:
+        return data['Close']
+    else:
+        # Fallback caso a estrutura venha diferente
+        return data
 
 def plot_correlation_matrix(df):
     """Gera heatmap de correlação"""
@@ -52,25 +61,29 @@ if submit_btn:
             # 1. Obtenção de Dados
             prices = get_data(tickers, start_date)
             
-            # Checagem de integridade
+            # Checagem se veio vazio
             if prices.empty:
                 st.error("Não foi possível baixar dados. Verifique os tickers.")
                 st.stop()
             
-            # Remover ativos com muitos NaNs (limpeza)
+            # Limpeza de dados (remove colunas ou linhas vazias)
             prices = prices.dropna(axis=1, how='all').dropna() 
             
+            if prices.shape[1] < 2:
+                st.error("É necessário pelo menos 2 ativos válidos para otimizar um portfólio.")
+                st.stop()
+
             # 2. Motor Estatístico (Otimizações Teóricas)
-            # Retornos Esperados via CAPM (Melhor prática que média histórica)
+            # Retornos Esperados via CAPM
             mu = expected_returns.capm_return(prices, risk_free_rate=risk_free_rate)
             
-            # Matriz de Covariância via Ledoit-Wolf (Reduz erros extremos)
+            # Matriz de Covariância via Ledoit-Wolf
             S = risk_models.CovarianceShrinkage(prices).ledoit_wolf()
 
             # 3. Otimização (Fronteira Eficiente)
             ef = EfficientFrontier(mu, S)
             
-            # Adiciona regularização L2 (evita pesos insignificantes como 0.0001%)
+            # Adiciona regularização L2 (Gamma)
             ef.add_objective(objective_functions.L2_reg, gamma=0.1)
             
             # Otimizar para Máximo Sharpe Ratio
@@ -83,13 +96,11 @@ if submit_btn:
 
             # --- Visualização dos Resultados ---
             
-            # Layout em Colunas
             col1, col2 = st.columns([1, 2])
             
             with col1:
                 st.subheader("🏆 Alocação Ótima (Max Sharpe)")
                 
-                # Exibir métricas principais
                 st.metric(label="Retorno Esperado (Anual)", value=f"{exp_return:.2%}")
                 st.metric(label="Volatilidade (Risco)", value=f"{volatilidade:.2%}")
                 st.metric(label="Índice de Sharpe", value=f"{sharpe:.2f}")
@@ -99,34 +110,34 @@ if submit_btn:
                 df_weights = df_weights[df_weights['Peso'] > 0].sort_values(by='Peso', ascending=False)
                 st.dataframe(df_weights.style.format("{:.2%}"))
                 
-                # Alocação Discreta (Quantidade de ações)
+                # Alocação Discreta
                 latest_prices = prices.iloc[-1]
                 da = discrete_allocation.DiscreteAllocation(cleaned_weights, latest_prices, total_portfolio_value=amount_to_invest)
                 allocation, leftover = da.greedy_portfolio()
                 
                 st.info(f"Com R$ {amount_to_invest:,.2f}, compre aproximadamente:")
-                st.json(allocation)
+                if allocation:
+                    st.json(allocation)
+                else:
+                    st.write("O valor investido é muito baixo para comprar uma ação inteira destes ativos.")
                 st.write(f"Troco estimado: R$ {leftover:.2f}")
 
             with col2:
-                # Gráfico de Fronteira Eficiente (Simulação de Monte Carlo para visualização)
                 st.subheader("📊 Fronteira Eficiente & Carteiras Aleatórias")
                 
-                # Simular 1000 portfolios para desenhar a "nuvem"
+                # Simulação Monte Carlo
                 n_samples = 1000
                 w_samples = np.random.dirichlet(np.ones(len(mu)), n_samples)
                 rets = w_samples.dot(mu)
                 stds = np.sqrt(np.diag(w_samples @ S @ w_samples.T))
                 sharpes = (rets - risk_free_rate) / stds
 
-                # Criar DataFrame da Simulação
                 sim_df = pd.DataFrame({'Volatilidade': stds, 'Retorno': rets, 'Sharpe': sharpes})
                 
-                # Plotar Scatter Plot
                 fig_ef = px.scatter(sim_df, x='Volatilidade', y='Retorno', color='Sharpe',
                                     color_continuous_scale='Viridis', hover_data={'Sharpe':':.2f'})
                 
-                # Adicionar o ponto ótimo (Estrela Vermelha)
+                # Ponto Ótimo
                 fig_ef.add_trace(go.Scatter(x=[volatilidade], y=[exp_return], mode='markers',
                                             marker=dict(color='red', size=15, symbol='star'),
                                             name='Máximo Sharpe'))
@@ -137,13 +148,12 @@ if submit_btn:
             # Matriz de Correlação
             st.markdown("---")
             st.subheader("🔗 Matriz de Correlação e Risco")
-            st.markdown("Ativos com **correlação baixa ou negativa** (cores azuis/escuras) aumentam a segurança do portfólio.")
             fig_corr = plot_correlation_matrix(prices)
             st.plotly_chart(fig_corr, use_container_width=True)
 
         except Exception as e:
-            st.error(f"Ocorreu um erro durante o cálculo: {e}")
-            st.warning("Dica: Verifique se os tickers são válidos no Yahoo Finance (Ex: use '.SA' para ações brasileiras).")
+            st.error(f"Ocorreu um erro: {e}")
+            st.warning("Dica: Se o erro persistir, tente reduzir o período de tempo ou trocar os tickers.")
 
 else:
     st.info("Insira os tickers e clique em 'Otimizar Portfólio' na barra lateral para começar.")
