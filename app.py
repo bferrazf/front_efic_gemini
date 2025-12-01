@@ -102,7 +102,7 @@ if submit_btn:
                 st.subheader("🏆 Alocação Ótima (Max Sharpe)")
                 
                 st.metric(label="Retorno Esperado (Anual)", value=f"{exp_return:.2%}")
-                st.metric(label="Volatilidade (Risco)", value=f"{volatilidade:.2%}")
+                st.metric(label="Volatilidade (Risco)", value=f"{volatility:.2%}")
                 st.metric(label="Índice de Sharpe", value=f"{sharpe:.2f}")
 
                 # Tabela de pesos
@@ -138,7 +138,7 @@ if submit_btn:
                                     color_continuous_scale='Viridis', hover_data={'Sharpe':':.2f'})
                 
                 # Ponto Ótimo
-                fig_ef.add_trace(go.Scatter(x=[volatilidade], y=[exp_return], mode='markers',
+                fig_ef.add_trace(go.Scatter(x=[volatility], y=[exp_return], mode='markers',
                                             marker=dict(color='red', size=15, symbol='star'),
                                             name='Máximo Sharpe'))
                 
